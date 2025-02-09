@@ -4,20 +4,22 @@ using UnityEngine;
 using UnityEngine.SceneManagement;
 public class MainScene : MonoBehaviour
 {
-    
+    public static string gameMode = "";
     // Start is called before the first frame update
     void Start()
     {
         
     }
 
-    // Update is called once per frame
-    void Update()
+    public void PlayLocalchangeScene()
     {
+        gameMode = "PlayLocal";
+        SceneManager.LoadScene("Game");
         
     }
-    public void changeScene()
+    public void PlayAIchangeScene()
     {
+        gameMode = "PlayAI";
         SceneManager.LoadScene("Game");
     }
 }

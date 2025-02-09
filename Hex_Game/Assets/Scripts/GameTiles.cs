@@ -6,29 +6,49 @@ using TMPro;
 public class GameTiles : MonoBehaviour
 {
     // Start is called before the first frame update
+    //[SerializeField] private int boardSize = 11;
     [SerializeField] private Tilemap gameTiles;
     [SerializeField] private GameObject _highlight;
     [SerializeField] private TMP_Text TurnText;
+    [SerializeField] private string gameMode = "";
+    private bool isGameEnded = false;
+    private bool AITurn = false;
     private Color red = new Color(0.86f, 0.28f, 0.23f, 1.0f);
     private Color blue = new Color(0.08f, 0.46f, 0.90f, 1.0f);
     private string currentTurn = "red";
+    private List<Vector3Int> gameTileList = new List<Vector3Int>();
     private HashSet<Vector3Int> clickedBlueTiles = new HashSet<Vector3Int>();
     private HashSet<Vector3Int> clickedRedTiles = new HashSet<Vector3Int>();
     private GameObject _currentTile;
     private Vector3Int _previousTile;
     void Start()
     {
+        //retrieve the type of game mode from the mainscene user input
+        gameMode = MainScene.gameMode;
+        //populate a list with the tilemap 
+        foreach (Vector3Int tile in gameTiles.cellBounds.allPositionsWithin)
+        {
+            if(gameTiles.HasTile(tile))
+            {
+                gameTileList.Add(tile);
+            }
+        }
         _currentTile = Instantiate(_highlight);
         _currentTile.SetActive(false);
         
     }
     void Update()
     {
+        if(isGameEnded == true)
+        {
+            return;
+        }
         Vector3 mouseWorldPos = Camera.main.ScreenToWorldPoint(Input.mousePosition);
-        mouseWorldPos.z = 0; // Ensure z-coordinate is zero for 2D
+        mouseWorldPos.z = 0; 
 
-        // Convert world position to Tilemap grid position
+        // world pos to grid pos
         Vector3Int cellPosition = gameTiles.WorldToCell(mouseWorldPos);
+        
         if(currentTurn == "red")
         {
             TurnText.text = "Red's Turn";
@@ -37,21 +57,82 @@ public class GameTiles : MonoBehaviour
         {
             TurnText.text = "Blue's Turn";
         }
-        // Check if the mouse is over a tile
+        // check mouse cursor over tile
+        tileGameLogic(cellPosition);
+    }
+    private void tileGameLogic(Vector3Int cellPosition)
+    {
         if (gameTiles.HasTile(cellPosition) && !clickedRedTiles.Contains(cellPosition) && !clickedBlueTiles.Contains(cellPosition))
         {
-            if (cellPosition != _previousTile) // Check if the tile has changed
+            if (cellPosition != _previousTile) // check if cursor moved to a different tile
             {
-                // Activate and move the highlight object to the hovered tile's center
+                // highlight the tile below mouse cursor 
                 _currentTile.SetActive(true);
                 _currentTile.transform.position = gameTiles.GetCellCenterWorld(cellPosition);
 
-                // Update the previous tile
+                
                 _previousTile = cellPosition;
             }
-            if(Input.GetMouseButtonDown(0))
+            if(gameMode == "PlayLocal")
             {
-                Debug.Log("Clicked on tile at " + cellPosition);
+                localGameTurnLogic(cellPosition);
+            }
+            else
+            {
+                AIGameTurnLogic(cellPosition);
+            }
+        }
+        else
+        {
+            // dont highlight if not over a tile
+            _currentTile.SetActive(false);
+            _previousTile = Vector3Int.zero;
+        }
+    }
+    private void AIGameTurnLogic(Vector3Int cellPosition)
+    {
+        if(currentTurn == "red")
+        {
+            
+            if(Input.GetMouseButtonDown(0) && !AITurn)
+            {
+                Debug.Log("Clicked on tile at " + tileOffset(cellPosition));
+                PaintTile(cellPosition, red);
+                clickedRedTiles.Add(cellPosition);
+                gameTileList.Remove(cellPosition);
+                currentTurn = "blue";
+                
+                if(CheckForWin(clickedRedTiles, true))
+                {
+                    Debug.Log("Red Wins");
+                    EndGame("red");
+                }
+                AITurn = true;
+            }
+        }
+        else
+        {
+            Vector3Int aiMove = gameTileList[Random.Range(0, gameTileList.Count)];
+            Debug.Log("AI Played the move" + tileOffset(aiMove));
+            PaintTile(aiMove, blue);
+            clickedBlueTiles.Add(aiMove);
+            gameTileList.Remove(aiMove);
+            currentTurn = "red";
+            
+            if(CheckForWin(clickedBlueTiles, true))
+            {
+                Debug.Log("Blue Wins");
+                EndGame("blue");
+            }
+            AITurn = false;
+            
+        }
+    }
+    private void localGameTurnLogic(Vector3Int cellPosition)
+    {
+        if(Input.GetMouseButtonDown(0))
+            {
+                Debug.Log("Clicked on tile at " + tileOffset(cellPosition));
                 if(currentTurn == "red")
                 {
                     
@@ -61,6 +142,7 @@ public class GameTiles : MonoBehaviour
                     if(CheckForWin(clickedRedTiles, true))
                     {
                         Debug.Log("Red Wins");
+                        EndGame("red");
                     }
                 }
                 else
@@ -71,112 +153,105 @@ public class GameTiles : MonoBehaviour
                     if(CheckForWin(clickedBlueTiles, false))
                     {
                         Debug.Log("Blue Wins");
+                        EndGame("blue");
                     }
                 }
-                
-                
             }
-        }
-        else
-        {
-            // Deactivate the highlight object if the mouse is not over a tile
-            _currentTile.SetActive(false);
-            _previousTile = Vector3Int.zero;
-        }
     }
-    void PaintTile(Vector3Int cellPosition, Color color)
+    private void PaintTile(Vector3Int cellPosition, Color color)
     {
         
         gameTiles.SetTileFlags(cellPosition, TileFlags.None);
         gameTiles.SetColor(cellPosition, color);
     }
+    private Vector2Int tileOffset(Vector3Int cell)
+    {
+        int y = cell.y;
+        int row = 5 - y;
+        int rowCalc = (6 - y) / 2;
+        int xOffset = -7 + rowCalc;
+        int column = cell.x - xOffset;
+        return new Vector2Int(column, row);
+    }
     private bool CheckForWin(HashSet<Vector3Int> playerTiles, bool isRed)
     {
-        // Get edges based on player
-        HashSet<Vector3Int> startEdge = new HashSet<Vector3Int>();
-        HashSet<Vector3Int> endEdge = new HashSet<Vector3Int>();
+        var offsetTiles = new HashSet<Vector2Int>();
+        var startEdge = new HashSet<Vector2Int>();
+        var endEdge = new HashSet<Vector2Int>();
 
-        foreach (var tile in playerTiles)
+        // Convert all tiles to logical coordinates
+        foreach (var cell in playerTiles)
         {
-            Vector3 worldPosition = gameTiles.CellToWorld(tile);
+            Vector2Int preOffsetTiles = tileOffset(cell);
+            offsetTiles.Add(preOffsetTiles);
 
             if (isRed)
             {
-                if (worldPosition.y <= gameTiles.cellBounds.yMin) startEdge.Add(tile);
-                if (worldPosition.y >= gameTiles.cellBounds.yMax) endEdge.Add(tile);
+                if (preOffsetTiles.y == 0) startEdge.Add(preOffsetTiles);  // Top edge
+                if (preOffsetTiles.y == 10) endEdge.Add(preOffsetTiles);   // Bottom edge
             }
             else
             {
-                if (worldPosition.x <= gameTiles.cellBounds.xMin) startEdge.Add(tile);
-                if (worldPosition.x >= gameTiles.cellBounds.xMax) endEdge.Add(tile);
+                if (preOffsetTiles.x == 0) startEdge.Add(preOffsetTiles);  // Left edge
+                if (preOffsetTiles.x == 10) endEdge.Add(preOffsetTiles);   // Right edge
             }
         }
 
-        // Use DFS to find a path from startEdge to endEdge
-        foreach (var startTile in startEdge)
+        if (startEdge.Count == 0 || endEdge.Count == 0) return false;
+
+        // Check connectivity using BFS
+        foreach (var start in startEdge)
         {
-            if (DepthFirstSearch(startTile, endEdge, playerTiles, new HashSet<Vector3Int>()))
+            if (BreadthFirstSearch(start, endEdge, offsetTiles))
                 return true;
         }
-
-        return false;
-    }    
-    private bool DepthFirstSearch(Vector3Int current, HashSet<Vector3Int> endEdge, HashSet<Vector3Int> playerTiles, HashSet<Vector3Int> visited)
-    {
-        if (visited.Contains(current)) return false;
-        if (endEdge.Contains(current)) return true;
-
-        visited.Add(current);
-
-        // Get neighbors of the current tile
-        foreach (var neighbor in CheckNeighbours(current))
-        {
-            if (playerTiles.Contains(neighbor) && DepthFirstSearch(neighbor, endEdge, playerTiles, visited))
-            {
-                return true;
-            }
-        }
-
         return false;
     }
-    /*private bool DepthFirstSearch(Vector3Int start, Vector3Int end, HashSet<Vector3Int> clickedTiles)
+    
+     private bool BreadthFirstSearch(Vector2Int start, HashSet<Vector2Int> endEdge, HashSet<Vector2Int> offsetTiles)
     {
-        Stack<Vector3Int> stack = new Stack<Vector3Int>();
-        stack.Push(start);
-        HashSet<Vector3Int> visited = new HashSet<Vector3Int>();
-        while(stack.Count > 0)
+        Queue<Vector2Int> queue = new Queue<Vector2Int>();
+        HashSet<Vector2Int> visited = new HashSet<Vector2Int>();
+        
+        queue.Enqueue(start);
+        visited.Add(start);
+
+        while (queue.Count > 0)
         {
-            Vector3Int current = stack.Pop();
-            if(current == end)
+            Vector2Int current = queue.Dequeue();
+            if (endEdge.Contains(current)) return true;
+
+            foreach (var neighbor in GetNeighbors(current))
             {
-                return true;
-            }
-            if(visited.Contains(current))
-            {
-                continue;
-            }
-            visited.Add(current);
-            List<Vector3Int> neighbours = CheckNeighbours(current);
-            foreach(Vector3Int neighbour in neighbours)
-            {
-                if(!clickedTiles.Contains(neighbour))
+                if (offsetTiles.Contains(neighbor) && 
+                    !visited.Contains(neighbor) &&
+                    neighbor.x >= 0 && neighbor.x <= 10 &&
+                    neighbor.y >= 0 && neighbor.y <= 10)
                 {
-                    stack.Push(neighbour);
+                    visited.Add(neighbor);
+                    queue.Enqueue(neighbor);
                 }
             }
         }
         return false;
-    }*/
-    private List<Vector3Int> CheckNeighbours(Vector3Int position)
+    }
+    private List<Vector2Int> GetNeighbors(Vector2Int Coordinates)
     {
-        List<Vector3Int> neighbours = new List<Vector3Int>();
-        neighbours.Add(new Vector3Int(position.x + 1, position.y, position.z));
-        neighbours.Add(new Vector3Int(position.x - 1, position.y, position.z));
-        neighbours.Add(new Vector3Int(position.x, position.y + 1, position.z));
-        neighbours.Add(new Vector3Int(position.x, position.y - 1, position.z));
-        neighbours.Add(new Vector3Int(position.x + 1, position.y - 1, position.z));
-        neighbours.Add(new Vector3Int(position.x - 1, position.y + 1, position.z));
-        return neighbours;
+        return new List<Vector2Int>
+        {
+            Coordinates + new Vector2Int(1, 0),   
+            Coordinates + new Vector2Int(-1, 0),  
+            Coordinates + new Vector2Int(0, 1),   
+            Coordinates + new Vector2Int(0, -1),  
+            Coordinates + new Vector2Int(1, -1), 
+            Coordinates + new Vector2Int(-1, 1),  
+        };
+    }
+    private void EndGame(string winner)
+    {
+        isGameEnded = true;
+        TurnText.text = $"{winner} Wins!";
+        _currentTile.SetActive(false);
     }
     
 }
