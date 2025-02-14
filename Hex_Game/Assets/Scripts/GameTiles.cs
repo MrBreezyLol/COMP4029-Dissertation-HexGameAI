@@ -58,9 +58,9 @@ public class GameTiles : MonoBehaviour
             TurnText.text = "Blue's Turn";
         }
         // check mouse cursor over tile
-        tileGameLogic(cellPosition);
+        TileGameLogic(cellPosition);
     }
-    private void tileGameLogic(Vector3Int cellPosition)
+    private void TileGameLogic(Vector3Int cellPosition)
     {
         if (gameTiles.HasTile(cellPosition) && !clickedRedTiles.Contains(cellPosition) && !clickedBlueTiles.Contains(cellPosition))
         {
@@ -75,7 +75,7 @@ public class GameTiles : MonoBehaviour
             }
             if(gameMode == "PlayLocal")
             {
-                localGameTurnLogic(cellPosition);
+                LocalGameTurnLogic(cellPosition);
             }
             else
             {
@@ -96,7 +96,7 @@ public class GameTiles : MonoBehaviour
             
             if(Input.GetMouseButtonDown(0) && !AITurn)
             {
-                Debug.Log("Clicked on tile at " + tileOffset(cellPosition));
+                Debug.Log("Clicked on tile at " + TileOffset(cellPosition));
                 PaintTile(cellPosition, red);
                 clickedRedTiles.Add(cellPosition);
                 gameTileList.Remove(cellPosition);
@@ -112,8 +112,12 @@ public class GameTiles : MonoBehaviour
         }
         else
         {
-            Vector3Int aiMove = gameTileList[Random.Range(0, gameTileList.Count)];
-            Debug.Log("AI Played the move" + tileOffset(aiMove));
+            
+
+            MTCS mtcs = new MTCS();
+            Vector3Int aiMove = mtcs.FetchBestMove(new HashSet<Vector3Int>(gameTileList), clickedRedTiles, clickedBlueTiles, false);
+            
+            Debug.Log("AI Played the move" + TileOffset(aiMove));
             PaintTile(aiMove, blue);
             clickedBlueTiles.Add(aiMove);
             gameTileList.Remove(aiMove);
@@ -128,11 +132,11 @@ public class GameTiles : MonoBehaviour
             
         }
     }
-    private void localGameTurnLogic(Vector3Int cellPosition)
+    private void LocalGameTurnLogic(Vector3Int cellPosition)
     {
         if(Input.GetMouseButtonDown(0))
             {
-                Debug.Log("Clicked on tile at " + tileOffset(cellPosition));
+                Debug.Log("Clicked on tile at " + TileOffset(cellPosition));
                 if(currentTurn == "red")
                 {
                     
@@ -164,7 +168,7 @@ public class GameTiles : MonoBehaviour
         gameTiles.SetTileFlags(cellPosition, TileFlags.None);
         gameTiles.SetColor(cellPosition, color);
     }
-    private Vector2Int tileOffset(Vector3Int cell)
+    private Vector2Int TileOffset(Vector3Int cell)
     {
         int y = cell.y;
         int row = 5 - y;
@@ -173,7 +177,7 @@ public class GameTiles : MonoBehaviour
         int column = cell.x - xOffset;
         return new Vector2Int(column, row);
     }
-    private bool CheckForWin(HashSet<Vector3Int> playerTiles, bool isRed)
+    public bool CheckForWin(HashSet<Vector3Int> playerTiles, bool isRed)
     {
         var offsetTiles = new HashSet<Vector2Int>();
         var startEdge = new HashSet<Vector2Int>();
@@ -182,7 +186,7 @@ public class GameTiles : MonoBehaviour
         // Convert all tiles to logical coordinates
         foreach (var cell in playerTiles)
         {
-            Vector2Int preOffsetTiles = tileOffset(cell);
+            Vector2Int preOffsetTiles = TileOffset(cell);
             offsetTiles.Add(preOffsetTiles);
 
             if (isRed)
@@ -252,6 +256,12 @@ public class GameTiles : MonoBehaviour
         isGameEnded = true;
         TurnText.text = $"{winner} Wins!";
         _currentTile.SetActive(false);
+    }
+    private Vector3Int RandomAIMove(List<Vector3Int> gameTileList)
+    {
+        Vector3Int aiMove = gameTileList[Random.Range(0, gameTileList.Count)];
+        return aiMove;
+
     }
     
 }
