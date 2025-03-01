@@ -6,6 +6,7 @@ public class Node
 {
     public Node parent;
     public List<Node> children = new List<Node>();
+    public Dictionary<Vector3Int, Node> lookupChildren = new Dictionary<Vector3Int, Node>();
     public Vector3Int move;
     public int wins;
     public int visits;
@@ -39,7 +40,7 @@ public class Node
     }
     public bool isExpanded()
     {
-        Debug.Log("children count" + children.Count);
-        return children.Count == availableMoves.Count;
+        
+        return lookupChildren.Count == availableMoves.Count;
     }
 }

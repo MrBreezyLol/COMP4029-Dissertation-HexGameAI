@@ -5,8 +5,8 @@ using UnityEngine.Tilemaps;
 using TMPro;
 public class GameTiles : MonoBehaviour
 {
-    // Start is called before the first frame update
-    //[SerializeField] private int boardSize = 11;
+    
+    
     [SerializeField] private Tilemap gameTiles;
     [SerializeField] private GameObject _highlight;
     [SerializeField] private TMP_Text TurnText;
@@ -21,6 +21,8 @@ public class GameTiles : MonoBehaviour
     private HashSet<Vector3Int> clickedRedTiles = new HashSet<Vector3Int>();
     private GameObject _currentTile;
     private Vector3Int _previousTile;
+    private MTCS mtcs;
+    private ABPruning alphaBeta;
     void Start()
     {
         //retrieve the type of game mode from the mainscene user input
@@ -35,7 +37,8 @@ public class GameTiles : MonoBehaviour
         }
         _currentTile = Instantiate(_highlight);
         _currentTile.SetActive(false);
-        
+        mtcs = new MTCS();
+        alphaBeta = new ABPruning();
     }
     void Update()
     {
@@ -96,7 +99,7 @@ public class GameTiles : MonoBehaviour
             
             if(Input.GetMouseButtonDown(0) && !AITurn)
             {
-                Debug.Log("Clicked on tile at " + TileOffset(cellPosition));
+                Debug.Log("You played the move " + TileOffset(cellPosition));
                 PaintTile(cellPosition, red);
                 clickedRedTiles.Add(cellPosition);
                 gameTileList.Remove(cellPosition);
@@ -104,7 +107,7 @@ public class GameTiles : MonoBehaviour
                 
                 if(CheckForWin(clickedRedTiles, true))
                 {
-                    Debug.Log("Red Wins");
+                    Debug.Log("You Win!");
                     EndGame("red");
                 }
                 AITurn = true;
@@ -114,8 +117,8 @@ public class GameTiles : MonoBehaviour
         {
             
 
-            MTCS mtcs = new MTCS();
-            Vector3Int aiMove = mtcs.FetchBestMove(new HashSet<Vector3Int>(gameTileList), clickedRedTiles, clickedBlueTiles, false);
+            Vector3Int aiMove = mtcs.MTCSFetchBestMove(new HashSet<Vector3Int>(gameTileList), clickedRedTiles, clickedBlueTiles, false);
+            //Vector3Int aiMove = alphaBeta.FetchBestMove(new HashSet<Vector3Int>(gameTileList), clickedRedTiles, clickedBlueTiles, false);
             
             Debug.Log("AI Played the move" + TileOffset(aiMove));
             PaintTile(aiMove, blue);
@@ -123,9 +126,9 @@ public class GameTiles : MonoBehaviour
             gameTileList.Remove(aiMove);
             currentTurn = "red";
             
-            if(CheckForWin(clickedBlueTiles, true))
+            if(CheckForWin(clickedBlueTiles, false))
             {
-                Debug.Log("Blue Wins");
+                Debug.Log("AI Wins!");
                 EndGame("blue");
             }
             AITurn = false;
@@ -136,27 +139,28 @@ public class GameTiles : MonoBehaviour
     {
         if(Input.GetMouseButtonDown(0))
             {
-                Debug.Log("Clicked on tile at " + TileOffset(cellPosition));
+                
                 if(currentTurn == "red")
                 {
-                    
+                    Debug.Log("Red played the move " + TileOffset(cellPosition));
                     PaintTile(cellPosition, red);
                     clickedRedTiles.Add(cellPosition);
                     currentTurn = "blue";
                     if(CheckForWin(clickedRedTiles, true))
                     {
-                        Debug.Log("Red Wins");
+                        Debug.Log("Red Wins!");
                         EndGame("red");
                     }
                 }
                 else
                 {
+                    Debug.Log("Blue played the move " + TileOffset(cellPosition));
                     PaintTile(cellPosition, blue);
                     clickedBlueTiles.Add(cellPosition);
                     currentTurn = "red";
                     if(CheckForWin(clickedBlueTiles, false))
                     {
-                        Debug.Log("Blue Wins");
+                        Debug.Log("Blue Wins!");
                         EndGame("blue");
                     }
                 }
@@ -183,7 +187,7 @@ public class GameTiles : MonoBehaviour
         var startEdge = new HashSet<Vector2Int>();
         var endEdge = new HashSet<Vector2Int>();
 
-        // Convert all tiles to logical coordinates
+        
         foreach (var cell in playerTiles)
         {
             Vector2Int preOffsetTiles = TileOffset(cell);
@@ -191,19 +195,19 @@ public class GameTiles : MonoBehaviour
 
             if (isRed)
             {
-                if (preOffsetTiles.y == 0) startEdge.Add(preOffsetTiles);  // Top edge
-                if (preOffsetTiles.y == 10) endEdge.Add(preOffsetTiles);   // Bottom edge
+                if (preOffsetTiles.y == 0) startEdge.Add(preOffsetTiles);  //top
+                if (preOffsetTiles.y == 10) endEdge.Add(preOffsetTiles);   //bottom
             }
             else
             {
-                if (preOffsetTiles.x == 0) startEdge.Add(preOffsetTiles);  // Left edge
-                if (preOffsetTiles.x == 10) endEdge.Add(preOffsetTiles);   // Right edge
+                if (preOffsetTiles.x == 0) startEdge.Add(preOffsetTiles);  //left
+                if (preOffsetTiles.x == 10) endEdge.Add(preOffsetTiles);   //right
             }
         }
 
         if (startEdge.Count == 0 || endEdge.Count == 0) return false;
 
-        // Check connectivity using BFS
+        
         foreach (var start in startEdge)
         {
             if (BreadthFirstSearch(start, endEdge, offsetTiles))

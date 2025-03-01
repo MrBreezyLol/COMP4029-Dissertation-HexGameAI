@@ -6,23 +6,18 @@ using Random=UnityEngine.Random;
 using System.Linq;
 public class MTCS
 {
-    private float exploration = 1.4f;
+    private float exploration = 1.5f;
     private int maxIterations = 1000;
 
-    public Vector3Int FetchBestMove(HashSet<Vector3Int> availableMoves, HashSet<Vector3Int> redTiles, HashSet<Vector3Int> blueTiles, bool redTurn)
+    public Vector3Int MTCSFetchBestMove(HashSet<Vector3Int> availableMoves, HashSet<Vector3Int> redTiles, HashSet<Vector3Int> blueTiles, bool redTurn)
     {
-        Debug.Log("in FetchBestMove method");
-        if(availableMoves == null)
+        
+        if(availableMoves == null || redTiles == null || blueTiles == null)
         {
             Debug.LogError("Available moves is null");
             return Vector3Int.zero;
         }
-        if(redTiles == null || blueTiles == null)
-        {
-            Debug.LogError("redTiles or blueTiles is null");
-            return Vector3Int.zero;
-            
-        }
+        
         Node root = new Node(null, Vector3Int.zero, availableMoves, redTiles, blueTiles, redTurn);
         if(root.move == Vector3Int.zero && availableMoves.Count == 0)
         {
@@ -35,7 +30,7 @@ public class MTCS
             
             Node selectedNode = SelectNode(root);
            
-            if(!selectedNode.isExpanded())
+            if(!selectedNode.isExpanded() && !IsTerminalNode(selectedNode))
             {
                 
                 selectedNode = Expansion(selectedNode);
@@ -52,25 +47,31 @@ public class MTCS
     }
     public Node SelectNode(Node node)
     {
-        if(node == null || node.children.Count == 0)
+        while (!IsTerminalNode(node) && node.isExpanded())
         {
-            Debug.LogError("No children for selection");
-            return node;
+            
+            node = BestChild(node);
+            
         }
+        
+        return node;
+    }
+    private Node BestChild(Node node)
+    {
         Node bestNode = null;
         float maxValue = float.MinValue;
-        foreach(var child in node.children)
+        foreach (var child in node.children)
         {
             float uctValue = UpperConfidenceBoundTree(child);
-            if(uctValue > maxValue)
+            if (uctValue > maxValue)
             {
                 maxValue = uctValue;
                 bestNode = child;
             }
         }
-        node = bestNode;
-        return node;
+        return bestNode;
     }
+
     public float UpperConfidenceBoundTree(Node node)
     {
         if(node.visits == 0)
@@ -84,19 +85,12 @@ public class MTCS
         
         foreach(var move in node.availableMoves)
         {
-            bool exists = false;
-            foreach(var child in node.children)
-            {
-                if(child.move == move)
-                {
-                    exists = true;
-                    break;
-                }
-            }
-            if(!exists)
+            
+            if(!node.lookupChildren.ContainsKey(move))
             {
                 Node newNode = new Node(node, move, node.availableMoves, node.redTiles, node.blueTiles, !node.redTurn);
                 node.children.Add(newNode);
+                node.lookupChildren[move] = newNode; 
                 return newNode;
             }
         }
@@ -111,27 +105,28 @@ public class MTCS
         bool turn = node.redTurn;
         while (tempMoves.Count > 0)
         {
-            Vector3Int randomMove = tempMoves.ElementAt(Random.Range(0, tempMoves.Count));
-            tempMoves.Remove(randomMove);
+            Vector3Int selectMove = tempMoves.ElementAt(Random.Range(0, tempMoves.Count));
+            //Vector3Int selectMove = SelectHeuristicMove(tempMoves, turn ? tempRedTiles : tempBlueTiles);
+
+            tempMoves.Remove(selectMove);
             if(turn)
             {
-                tempRedTiles.Add(randomMove);
-            } 
-            else
-            {
-                tempBlueTiles.Add(randomMove);
-            } 
-            turn = !turn;
-            GameTiles instance = GameObject.FindObjectOfType<GameTiles>();
-            if (instance.CheckForWin(turn ? tempRedTiles : tempBlueTiles, turn)) 
-                if(turn)
-                {
-                    return -1;
-                }
-                else
+                tempRedTiles.Add(selectMove);
+                if(CheckSimulationWin(tempRedTiles, true))
                 {
                     return 1;
                 }
+            } 
+            else
+            {
+                tempBlueTiles.Add(selectMove);
+                if(CheckSimulationWin(tempBlueTiles, false))
+                {
+                    return -1;
+                }
+            } 
+            turn = !turn;
+            
         }
         return 0;
     }
@@ -167,5 +162,123 @@ public class MTCS
         }
         return bestNode.move;
     }
+    private bool IsTerminalNode(Node node)
+    {
+        return node.availableMoves.Count == 0;
+    }
+    //  private Vector3Int SelectHeuristicMove(HashSet<Vector3Int> availableMoves, HashSet<Vector3Int> currentTiles)
+    // {
+    //     List<Vector3Int> moves = new List<Vector3Int>(availableMoves);
+    //     List<int> weights = new List<int>();
+
+    //     foreach (var move in moves)
+    //     {
+    //         int count = 0;
+    //         foreach (var neighbor in GetCellNeighbors(move))
+    //             if (currentTiles.Contains(neighbor)) count++;
+    //         weights.Add(1 + count);
+    //     }
+
+    //     int totalWeight = weights.Sum();
+    //     int randomWeight = Random.Range(0, totalWeight);
+    //     int currentWeight = 0;
+
+    //     for (int i = 0; i < moves.Count; i++)
+    //     {
+    //         currentWeight += weights[i];
+    //         if (randomWeight < currentWeight)
+    //             return moves[i];
+    //     }
+    //     return moves[0];
+    // }
+    // private List<Vector3Int> GetCellNeighbors(Vector3Int cell)
+    // {
+    //     return new List<Vector3Int>
+    //     {
+    //         cell + new Vector3Int(1, 0, 0),
+    //         cell + new Vector3Int(-1, 0, 0),
+    //         cell + new Vector3Int(0, 1, 0),
+    //         cell + new Vector3Int(0, -1, 0),
+    //         cell + new Vector3Int(1, -1, 0),
+    //         cell + new Vector3Int(-1, 1, 0)
+    //     };
+    // }
+
+    private bool CheckSimulationWin(HashSet<Vector3Int> playerTiles, bool isRed)
+    {
+        var offsetTiles = new HashSet<Vector2Int>();
+        var startEdge = new HashSet<Vector2Int>();
+        var endEdge = new HashSet<Vector2Int>();
+
+        foreach (var cell in playerTiles)
+        {
+            Vector2Int pos = SimulationTileOffset(cell);
+            offsetTiles.Add(pos);
+
+            if (isRed)
+            {
+                if (pos.y == 0) startEdge.Add(pos);
+                if (pos.y == 10) endEdge.Add(pos);
+            }
+            else
+            {
+                if (pos.x == 0) startEdge.Add(pos);
+                if (pos.x == 10) endEdge.Add(pos);
+            }
+        }
+
+        if (startEdge.Count == 0 || endEdge.Count == 0) return false;
+
+        foreach (var start in startEdge)
+            if (SimulationBFS(start, endEdge, offsetTiles))
+                return true;
+        return false;
+    }
+
+    private Vector2Int SimulationTileOffset(Vector3Int cell)
+    {
+        int y = cell.y;
+        int row = 5 - y;
+        int rowCalc = (6 - y) / 2;
+        int xOffset = -7 + rowCalc;
+        int column = cell.x - xOffset;
+        return new Vector2Int(column, row);
+    }
+
+    private bool SimulationBFS(Vector2Int start, HashSet<Vector2Int> endEdge, HashSet<Vector2Int> tiles)
+    {
+        Queue<Vector2Int> queue = new Queue<Vector2Int>();
+        HashSet<Vector2Int> visited = new HashSet<Vector2Int>();
+        queue.Enqueue(start);
+        visited.Add(start);
+
+        while (queue.Count > 0)
+        {
+            Vector2Int current = queue.Dequeue();
+            if (endEdge.Contains(current)) return true;
+
+            foreach (var neighbor in GetSimulationNeighbors(current))
+                if (tiles.Contains(neighbor) && !visited.Contains(neighbor))
+                {
+                    visited.Add(neighbor);
+                    queue.Enqueue(neighbor);
+                }
+        }
+        return false;
+    }
+
+    private List<Vector2Int> GetSimulationNeighbors(Vector2Int pos)
+    {
+        return new List<Vector2Int>
+        {
+            pos + new Vector2Int(1, 0),
+            pos + new Vector2Int(-1, 0),
+            pos + new Vector2Int(0, 1),
+            pos + new Vector2Int(0, -1),
+            pos + new Vector2Int(1, -1),
+            pos + new Vector2Int(-1, 1)
+        };
+    }
+    
 }
 
