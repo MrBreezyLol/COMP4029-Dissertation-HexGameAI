@@ -23,6 +23,7 @@ public class GameTiles : MonoBehaviour
     private Vector3Int _previousTile;
     private MTCS mtcs;
     private ABPruning alphaBeta;
+    private ABPruning2 alphaBeta2;
     void Start()
     {
         //retrieve the type of game mode from the mainscene user input
@@ -39,6 +40,7 @@ public class GameTiles : MonoBehaviour
         _currentTile.SetActive(false);
         mtcs = new MTCS();
         alphaBeta = new ABPruning();
+        alphaBeta2 = new ABPruning2();
     }
     void Update()
     {
@@ -117,8 +119,8 @@ public class GameTiles : MonoBehaviour
         {
             
 
-            Vector3Int aiMove = mtcs.MTCSFetchBestMove(new HashSet<Vector3Int>(gameTileList), clickedRedTiles, clickedBlueTiles, false);
-            //Vector3Int aiMove = alphaBeta.FetchBestMove(new HashSet<Vector3Int>(gameTileList), clickedRedTiles, clickedBlueTiles, false);
+            //Vector3Int aiMove = mtcs.MTCSFetchBestMove(new HashSet<Vector3Int>(gameTileList), clickedRedTiles, clickedBlueTiles, false);
+            Vector3Int aiMove = alphaBeta2.FetchBestMove(new HashSet<Vector3Int>(gameTileList), clickedRedTiles, clickedBlueTiles, false);
             
             Debug.Log("AI Played the move" + TileOffset(aiMove));
             PaintTile(aiMove, blue);
