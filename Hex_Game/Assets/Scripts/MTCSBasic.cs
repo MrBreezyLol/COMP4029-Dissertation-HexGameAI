@@ -4,7 +4,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using Random=UnityEngine.Random;
 using System.Linq;
-public class MTCS
+public class MTCSBasic
 {
     private float exploration = 1.5f;
     private int maxIterations = 1000;
@@ -159,7 +159,7 @@ public class MTCS
         while (tempMoves.Count > 0)
         {
             Vector3Int selectMove = tempMoves.ElementAt(Random.Range(0, tempMoves.Count));
-            //Vector3Int selectMove = BestHeuristicMove(tempMoves, turn ? tempRedTiles : tempBlueTiles, turn);
+            
 
             tempMoves.Remove(selectMove);
             if(turn)
@@ -219,127 +219,8 @@ public class MTCS
     {
         return node.availableMoves.Count == 0;
     }
-    private Vector3Int BestHeuristicMove(HashSet<Vector3Int> availableMoves, HashSet<Vector3Int> currentTiles, bool redTurn)
-    {
-        Vector3Int bestMove = Vector3Int.zero;
-        int bestScore = int.MaxValue;
-        foreach(var move in availableMoves)
-        {
-            HashSet<Vector3Int> currTiles = new HashSet<Vector3Int>(currentTiles);
-            currTiles.Add(move);
-            int pathLength = Djikstras(currentTiles, redTurn);
-            int score = 2 * pathLength;
-            if(score > bestScore)
-            {
-                bestScore = score;
-                bestMove = move;
-            }
-        }
-        
-        return bestMove;
-    }
-    private int Djikstras(HashSet<Vector3Int> playerTiles, bool redTurn)
-    {
-        var offsetTiles = new HashSet<Vector2Int>();
-        var startEdge = new HashSet<Vector2Int>();
-        var endEdge = new HashSet<Vector2Int>();
-
-        foreach (var cell in playerTiles)
-        {
-            Vector2Int pos = SimulationTileOffset(cell);
-            offsetTiles.Add(pos);
-
-            if (redTurn)
-            {
-                if (pos.y == 0) startEdge.Add(pos);
-                if (pos.y == 10) endEdge.Add(pos);
-            }
-            else
-            {
-                if (pos.x == 0) startEdge.Add(pos);
-                if (pos.x == 10) endEdge.Add(pos);
-            }
-        }
-        if (startEdge.Count == 0 || endEdge.Count == 0)
-        {
-            return int.MaxValue;
-        }
-        List<Vector2Int> notVisited = new List<Vector2Int>();
-        Dictionary<Vector2Int, int> distance = new Dictionary<Vector2Int, int>();
-        foreach(var move in offsetTiles)
-        {
-            if(offsetTiles.Contains(move))
-            {
-                distance[move] = 0;
-            }
-            else
-            {
-                distance[move] = int.MaxValue;
-            }
-            notVisited.Add(move);
-        }
-        foreach(var node in endEdge)
-        {
-            if(!distance.ContainsKey(node))
-            {
-                distance[node] = int.MaxValue;
-                notVisited.Add(node);
-            }
-        }
-        while(notVisited.Count > 0)
-        {
-            // Find node with smallest tentative distance
-            Vector2Int current = notVisited[0];
-            foreach(var node in notVisited)
-            {
-                if(distance[node] < distance[current])
-                {
-                    current = node;
-                }
-            }
-            notVisited.Remove(current);
-
-            // Early exit if we reach end edge
-            if (endEdge.Contains(current))
-            {
-                break;
-            }
-            foreach(var neighbour in GetSimulationNeighbors(current))
-            {
-                int cost = int.MaxValue;
-                if(offsetTiles.Contains(neighbour))
-                {
-                    cost = 0;
-                }
-                else
-                {
-                    cost = 1;
-                }
-                //int cost = offsetTiles.Contains(neighbor) ? 0 : 1;
-                int alt = distance[current] + cost;
-                
-                if(alt < distance.GetValueOrDefault(neighbour, int.MaxValue))
-                {
-                    distance[neighbour] = alt;
-                    if (!notVisited.Contains(neighbour))
-                    {
-                        notVisited.Add(neighbour);
-                    }
-                }
-            }
-        }
-
-        // Find minimal distance to end edge
-        int minDistance = int.MaxValue;
-        foreach(var endPos in endEdge)
-        {
-            if (distance.ContainsKey(endPos))
-            {
-                minDistance = Mathf.Min(minDistance, distance[endPos]);
-            }
-        }
-        return minDistance;
-    }
+    
+    
 
     private bool CheckSimulationWin(HashSet<Vector3Int> playerTiles, bool redTurn)
     {
@@ -418,4 +299,5 @@ public class MTCS
     }
     
 }
+
 

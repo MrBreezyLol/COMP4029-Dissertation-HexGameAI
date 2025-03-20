@@ -7,6 +7,8 @@ public class Node
     public Node parent;
     public List<Node> children = new List<Node>();
     public Dictionary<Vector3Int, Node> lookupChildren = new Dictionary<Vector3Int, Node>();
+    private Dictionary<Vector3Int, int> raveWins = new Dictionary<Vector3Int, int>();
+    private Dictionary<Vector3Int, int> raveVisits = new Dictionary<Vector3Int, int>();
     public Vector3Int move;
     public int wins;
     public int visits;
@@ -19,6 +21,8 @@ public class Node
     {
         parent = parent1;
         move = move1;
+        raveWins[move] = 0;
+        raveVisits[move] = 0;
         wins = 0;
         visits = 0;
         availableMoves = new HashSet<Vector3Int>(availableMoves1);

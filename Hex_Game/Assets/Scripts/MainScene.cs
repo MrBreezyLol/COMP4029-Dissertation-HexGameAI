@@ -22,4 +22,9 @@ public class MainScene : MonoBehaviour
         gameMode = "PlayAI";
         SceneManager.LoadScene("Game");
     }
+    public void SimulateAIGames()
+    {
+        gameMode = "SimulateAIGame";
+        SceneManager.LoadScene("Game");
+    }
 }

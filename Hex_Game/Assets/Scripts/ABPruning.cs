@@ -1,381 +1,474 @@
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using System;
 
 public class ABPruning 
 {
-    private int maxDepth = 3;
-    private Dictionary<string, int> transpositionTable = new Dictionary<string, int>();
-
+    private int maxDepth = 3; // Reduced depth for faster computation
+    private Dictionary<long, int> transpositionTable = new Dictionary<long, int>();
+    private Vector2Int[] precalculatedNeighbors = new Vector2Int[] 
+    {
+        new Vector2Int(1, 0),
+        new Vector2Int(-1, 0),
+        new Vector2Int(0, 1),
+        new Vector2Int(0, -1),
+        new Vector2Int(1, -1),
+        new Vector2Int(-1, 1)
+    };
+    
+    // Cache for offset calculations
+    private Dictionary<Vector3Int, Vector2Int> offsetCache = new Dictionary<Vector3Int, Vector2Int>();
+    
+    // Zobrist hashing keys for fast board state hashing
+    private long[,,] zobristKeys;
+    private long zobristTurn;
+    
+    public ABPruning()
+    {
+        // Initialize Zobrist keys for fast hashing
+        System.Random rng = new System.Random(42); // Fixed seed for consistency
+        zobristKeys = new long[11, 11, 2]; // [x, y, player]
+        for (int x = 0; x < 11; x++)
+        {
+            for (int y = 0; y < 11; y++)
+            {
+                for (int p = 0; p < 2; p++)
+                {
+                    zobristKeys[x, y, p] = (long)rng.NextDouble() * long.MaxValue;
+                }
+            }
+        }
+        zobristTurn = (long)rng.NextDouble() * long.MaxValue;
+    }
+    
     public Vector3Int FetchBestMove(HashSet<Vector3Int> availableMoves, HashSet<Vector3Int> redTiles, HashSet<Vector3Int> blueTiles, bool redTurn)
     {
-        // Sort moves to improve pruning effectiveness
-        List<Vector3Int> orderedMoves = OrderMoves(availableMoves, redTiles, blueTiles, redTurn);
-        
-        int bestVal = redTurn ? int.MinValue : int.MaxValue;
-        Vector3Int bestMove = Vector3Int.zero;
-        int alpha = int.MinValue;
-        int beta = int.MaxValue;
-        
-        // Clear the transposition table before each new search
+        // Clear caches at the start of a new search
         transpositionTable.Clear();
+        offsetCache.Clear();
         
-        foreach(var move in orderedMoves)
+        // Make a quick check for immediate winning moves or blocking moves
+        Vector3Int quickMove = QuickMoveCheck(availableMoves, redTiles, blueTiles, redTurn);
+        if (quickMove != Vector3Int.zero)
         {
-            // Use shallow copies with a temporary collection
-            HashSet<Vector3Int> nextRedTiles = redTurn ? AddToSet(redTiles, move) : redTiles;
-            HashSet<Vector3Int> nextBlueTiles = !redTurn ? AddToSet(blueTiles, move) : blueTiles;
+            return quickMove;
+        }
+        
+        // Iterative deepening - start with shallow searches and go deeper if time permits
+        Vector3Int bestMove = Vector3Int.zero;
+        for (int depth = 1; depth <= maxDepth; depth++)
+        {
+            int alpha = int.MinValue;
+            int beta = int.MaxValue;
+            int bestVal = redTurn ? int.MinValue : int.MaxValue;
             
-            int val = AlphaBeta(RemoveFromSet(availableMoves, move), nextRedTiles, nextBlueTiles, !redTurn, maxDepth, alpha, beta);
-            
-            if(redTurn && val > bestVal)
+            // Sort moves to improve pruning - use our heuristic evaluation
+            List<MoveScore> scoredMoves = new List<MoveScore>();
+            foreach (var move in availableMoves)
             {
-                bestVal = val;
-                bestMove = move;
-                alpha = Mathf.Max(bestVal, alpha);
+                int score = EvaluateMoveScore(move, redTiles, blueTiles, redTurn);
+                scoredMoves.Add(new MoveScore(move, score));
             }
-            else if(!redTurn && val < bestVal)
+            
+            // Sort in descending order for red, ascending for blue
+            scoredMoves.Sort((a, b) => redTurn ? 
+                b.Score.CompareTo(a.Score) : 
+                a.Score.CompareTo(b.Score));
+            
+            foreach (var moveScore in scoredMoves)
             {
-                bestVal = val;
-                bestMove = move;
-                beta = Mathf.Min(bestVal, beta);
+                Vector3Int move = moveScore.Move;
+                
+                HashSet<Vector3Int> nextRedTiles = redTurn ? 
+                    new HashSet<Vector3Int>(redTiles) { move } : 
+                    redTiles;
+                    
+                HashSet<Vector3Int> nextBlueTiles = !redTurn ? 
+                    new HashSet<Vector3Int>(blueTiles) { move } : 
+                    blueTiles;
+                
+                HashSet<Vector3Int> nextAvailableMoves = new HashSet<Vector3Int>(availableMoves);
+                nextAvailableMoves.Remove(move);
+                
+                int val = AlphaBeta(nextAvailableMoves, nextRedTiles, nextBlueTiles, !redTurn, depth - 1, alpha, beta);
+                
+                if (redTurn && val > bestVal)
+                {
+                    bestVal = val;
+                    bestMove = move;
+                    alpha = Math.Max(alpha, bestVal);
+                }
+                else if (!redTurn && val < bestVal)
+                {
+                    bestVal = val;
+                    bestMove = move;
+                    beta = Math.Min(beta, bestVal);
+                }
             }
         }
         
         return bestMove;
     }
     
+    // Quick check for immediate wins or blocks
+    private Vector3Int QuickMoveCheck(HashSet<Vector3Int> availableMoves, HashSet<Vector3Int> redTiles, HashSet<Vector3Int> blueTiles, bool redTurn)
+    {
+        // Check for winning moves
+        foreach (var move in availableMoves)
+        {
+            if (redTurn)
+            {
+                HashSet<Vector3Int> testRedTiles = new HashSet<Vector3Int>(redTiles) { move };
+                if (CheckForWin(testRedTiles, true))
+                {
+                    return move; // This move wins for red
+                }
+            }
+            else
+            {
+                HashSet<Vector3Int> testBlueTiles = new HashSet<Vector3Int>(blueTiles) { move };
+                if (CheckForWin(testBlueTiles, false))
+                {
+                    return move; // This move wins for blue
+                }
+            }
+        }
+        
+        // Check for blocking opponent's potential win
+        foreach (var move in availableMoves)
+        {
+            if (redTurn)
+            {
+                HashSet<Vector3Int> testBlueTiles = new HashSet<Vector3Int>(blueTiles) { move };
+                if (CheckForWin(testBlueTiles, false))
+                {
+                    return move; // Block this winning move for blue
+                }
+            }
+            else
+            {
+                HashSet<Vector3Int> testRedTiles = new HashSet<Vector3Int>(redTiles) { move };
+                if (CheckForWin(testRedTiles, true))
+                {
+                    return move; // Block this winning move for red
+                }
+            }
+        }
+        
+        return Vector3Int.zero; // No immediate win or block found
+    }
+    
+    // Simple struct to pair moves with their scores for sorting
+    private struct MoveScore
+    {
+        public Vector3Int Move;
+        public int Score;
+        
+        public MoveScore(Vector3Int move, int score)
+        {
+            Move = move;
+            Score = score;
+        }
+    }
+    
     private int AlphaBeta(HashSet<Vector3Int> availableMoves, HashSet<Vector3Int> redTiles, HashSet<Vector3Int> blueTiles, bool redTurn, int depth, int alpha, int beta)
     {
-        // Immediate win check
-        if(CheckForWin(redTiles, true))
-        {
-            return 1000 + depth;
-        }
-        if(CheckForWin(blueTiles, false))
-        {
-            return -1000 - depth;
-        }
+        // Fast win check
+        if (CheckForWin(redTiles, true)) return 1000 + depth;
+        if (CheckForWin(blueTiles, false)) return -1000 - depth;
         
         // Terminal node check
-        if(depth == 0 || availableMoves.Count == 0)
+        if (depth <= 0 || availableMoves.Count == 0)
         {
-            return EvaluateBoard(availableMoves, redTiles, blueTiles);
+            return FastEvaluateBoard(redTiles, blueTiles);
         }
         
-        // Check transposition table
-        string boardKey = GetBoardHash(redTiles, blueTiles, redTurn);
-        if (transpositionTable.TryGetValue(boardKey, out int cachedValue))
+        // Check transposition table using Zobrist hashing
+        long boardHash = ComputeZobristHash(redTiles, blueTiles, redTurn);
+        if (transpositionTable.TryGetValue(boardHash, out int cachedValue))
         {
             return cachedValue;
         }
         
-        // Order moves to improve pruning
-        List<Vector3Int> orderedMoves = OrderMoves(availableMoves, redTiles, blueTiles, redTurn);
-        
         int bestVal;
-        if(redTurn)
+        
+        // For very shallow depths, evaluate fewer moves to save time
+        int movesToEvaluate = Math.Min(availableMoves.Count, depth == 1 ? 3 : availableMoves.Count);
+        
+        // Sort and select top moves
+        List<MoveScore> scoredMoves = new List<MoveScore>();
+        foreach (var move in availableMoves)
+        {
+            int score = EvaluateMoveScore(move, redTiles, blueTiles, redTurn);
+            scoredMoves.Add(new MoveScore(move, score));
+        }
+        
+        // Sort in order of most promising first
+        scoredMoves.Sort((a, b) => redTurn ? 
+            b.Score.CompareTo(a.Score) : 
+            a.Score.CompareTo(b.Score));
+            
+        // Keep only the most promising moves
+        if (scoredMoves.Count > movesToEvaluate)
+        {
+            scoredMoves.RemoveRange(movesToEvaluate, scoredMoves.Count - movesToEvaluate);
+        }
+        
+        if (redTurn)
         {
             bestVal = int.MinValue;
-            foreach(var move in orderedMoves)
+            foreach (var moveScore in scoredMoves)
             {
-                // Use shallow copies with a temporary collection
-                HashSet<Vector3Int> nextRedTiles = AddToSet(redTiles, move);
+                Vector3Int move = moveScore.Move;
                 
-                int val = AlphaBeta(RemoveFromSet(availableMoves, move), nextRedTiles, blueTiles, false, depth - 1, alpha, beta);
-                bestVal = Mathf.Max(bestVal, val);
-                alpha = Mathf.Max(alpha, bestVal);
+                HashSet<Vector3Int> nextRedTiles = new HashSet<Vector3Int>(redTiles) { move };
                 
-                if(beta <= alpha)
-                {
-                    break; // Beta cutoff
-                }
+                HashSet<Vector3Int> nextAvailableMoves = new HashSet<Vector3Int>(availableMoves);
+                nextAvailableMoves.Remove(move);
+                
+                int val = AlphaBeta(nextAvailableMoves, nextRedTiles, blueTiles, false, depth - 1, alpha, beta);
+                bestVal = Math.Max(bestVal, val);
+                alpha = Math.Max(alpha, bestVal);
+                
+                if (beta <= alpha) break; // Beta cutoff
             }
         }
         else
         {
             bestVal = int.MaxValue;
-            foreach(var move in orderedMoves)
+            foreach (var moveScore in scoredMoves)
             {
-                // Use shallow copies with a temporary collection
-                HashSet<Vector3Int> nextBlueTiles = AddToSet(blueTiles, move);
+                Vector3Int move = moveScore.Move;
                 
-                int val = AlphaBeta(RemoveFromSet(availableMoves, move), redTiles, nextBlueTiles, true, depth - 1, alpha, beta);
-                bestVal = Mathf.Min(bestVal, val);
-                beta = Mathf.Min(beta, bestVal);
+                HashSet<Vector3Int> nextBlueTiles = new HashSet<Vector3Int>(blueTiles) { move };
                 
-                if(beta <= alpha)
-                {
-                    break; // Alpha cutoff
-                }
+                HashSet<Vector3Int> nextAvailableMoves = new HashSet<Vector3Int>(availableMoves);
+                nextAvailableMoves.Remove(move);
+                
+                int val = AlphaBeta(nextAvailableMoves, redTiles, nextBlueTiles, true, depth - 1, alpha, beta);
+                bestVal = Math.Min(bestVal, val);
+                beta = Math.Min(beta, bestVal);
+                
+                if (beta <= alpha) break; // Alpha cutoff
             }
         }
         
         // Store result in transposition table
-        transpositionTable[boardKey] = bestVal;
+        transpositionTable[boardHash] = bestVal;
         
         return bestVal;
     }
     
-    // Efficient method to get a new set with one additional item
-    private HashSet<Vector3Int> AddToSet(HashSet<Vector3Int> original, Vector3Int item)
+    // Zobrist hashing for fast board state identification
+    private long ComputeZobristHash(HashSet<Vector3Int> redTiles, HashSet<Vector3Int> blueTiles, bool redTurn)
     {
-        HashSet<Vector3Int> newSet = new HashSet<Vector3Int>(original);
-        newSet.Add(item);
-        return newSet;
-    }
-    
-    // Efficient method to get a new set with one removed item
-    private HashSet<Vector3Int> RemoveFromSet(HashSet<Vector3Int> original, Vector3Int item)
-    {
-        HashSet<Vector3Int> newSet = new HashSet<Vector3Int>(original);
-        newSet.Remove(item);
-        return newSet;
-    }
-    
-    // Move ordering heuristic to improve pruning efficiency
-    private List<Vector3Int> OrderMoves(HashSet<Vector3Int> availableMoves, HashSet<Vector3Int> redTiles, HashSet<Vector3Int> blueTiles, bool redTurn)
-    {
-        List<Vector3Int> orderedMoves = new List<Vector3Int>(availableMoves);
+        long hash = 0;
         
-        // Use a simple heuristic to order moves: prioritize center and moves adjacent to existing pieces
-        orderedMoves.Sort((a, b) => {
-            int scoreA = EvaluateMoveScore(a, redTiles, blueTiles, redTurn);
-            int scoreB = EvaluateMoveScore(b, redTiles, blueTiles, redTurn);
-            return redTurn ? scoreB.CompareTo(scoreA) : scoreA.CompareTo(scoreB);
-        });
+        foreach (var tile in redTiles)
+        {
+            Vector2Int offset = GetCachedOffset(tile);
+            if (offset.x >= 0 && offset.x < 11 && offset.y >= 0 && offset.y < 11)
+            {
+                hash ^= zobristKeys[offset.x, offset.y, 0]; // 0 for red
+            }
+        }
         
-        return orderedMoves;
+        foreach (var tile in blueTiles)
+        {
+            Vector2Int offset = GetCachedOffset(tile);
+            if (offset.x >= 0 && offset.x < 11 && offset.y >= 0 && offset.y < 11)
+            {
+                hash ^= zobristKeys[offset.x, offset.y, 1]; // 1 for blue
+            }
+        }
+        
+        if (redTurn) hash ^= zobristTurn;
+        
+        return hash;
     }
     
-    // Simple move scoring for move ordering
+    // Use cached offset calculation
+    private Vector2Int GetCachedOffset(Vector3Int cell)
+    {
+        if (offsetCache.TryGetValue(cell, out Vector2Int offset))
+        {
+            return offset;
+        }
+        
+        offset = TileOffset(cell);
+        offsetCache[cell] = offset;
+        return offset;
+    }
+    
+    // Fast move evaluation for sorting
     private int EvaluateMoveScore(Vector3Int move, HashSet<Vector3Int> redTiles, HashSet<Vector3Int> blueTiles, bool redTurn)
     {
-        Vector2Int offset = TileOffset(move);
+        Vector2Int offset = GetCachedOffset(move);
         int score = 0;
         
-        // Prioritize center positions
+        // Center proximity (higher is better)
         Vector2Int boardCenter = new Vector2Int(5, 5);
-        int distanceToCenter = Mathf.Abs(offset.x - boardCenter.x) + Mathf.Abs(offset.y - boardCenter.y);
+        int distanceToCenter = Math.Abs(offset.x - boardCenter.x) + Math.Abs(offset.y - boardCenter.y);
         score += (11 - distanceToCenter) * 2;
         
-        // Prioritize positions adjacent to existing pieces of the same color
-        HashSet<Vector3Int> friendlyTiles = redTurn ? redTiles : blueTiles;
-        foreach (var tile in friendlyTiles)
-        {
-            Vector2Int offsetTile = TileOffset(tile);
-            if (IsAdjacent(offset, offsetTile))
-            {
-                score += 5;
-            }
-        }
-        
-        // Consider blocking opponent pieces too
-        HashSet<Vector3Int> enemyTiles = redTurn ? blueTiles : redTiles;
-        foreach (var tile in enemyTiles)
-        {
-            Vector2Int offsetTile = TileOffset(tile);
-            if (IsAdjacent(offset, offsetTile))
-            {
-                score += 3;
-            }
-        }
-        
-        // Prioritize edge positions for connecting strategy
+        // Edge positions for connection strategy are valuable
         if (redTurn)
         {
-            if (offset.y == 0 || offset.y == 10) score += 8;  // Top/bottom edges for red
+            if (offset.y == 0 || offset.y == 10) score += 15; // Top/bottom edges for red
         }
         else
         {
-            if (offset.x == 0 || offset.x == 10) score += 8;  // Left/right edges for blue
+            if (offset.x == 0 || offset.x == 10) score += 15; // Left/right edges for blue
         }
+        
+        // Adjacent to friendly tiles
+        int adjacentFriendly = 0;
+        HashSet<Vector3Int> friendlyTiles = redTurn ? redTiles : blueTiles;
+        foreach (var tile in friendlyTiles)
+        {
+            Vector2Int offsetTile = GetCachedOffset(tile);
+            if (IsAdjacent(offset, offsetTile))
+            {
+                adjacentFriendly++;
+            }
+        }
+        score += adjacentFriendly * 10;
+        
+        // Adjacent to enemy tiles
+        int adjacentEnemy = 0;
+        HashSet<Vector3Int> enemyTiles = redTurn ? blueTiles : redTiles;
+        foreach (var tile in enemyTiles)
+        {
+            Vector2Int offsetTile = GetCachedOffset(tile);
+            if (IsAdjacent(offset, offsetTile))
+            {
+                adjacentEnemy++;
+            }
+        }
+        score += adjacentEnemy * 5;
         
         return score;
     }
     
+    // Fast check if two positions are adjacent
     private bool IsAdjacent(Vector2Int a, Vector2Int b)
     {
-        foreach (var neighbor in GetNeighbors(a))
+        foreach (var dir in precalculatedNeighbors)
         {
-            if (neighbor.Equals(b)) return true;
+            if (a.x + dir.x == b.x && a.y + dir.y == b.y)
+            {
+                return true;
+            }
         }
         return false;
     }
     
-    // Create a unique board state hash for the transposition table
-    private string GetBoardHash(HashSet<Vector3Int> redTiles, HashSet<Vector3Int> blueTiles, bool redTurn)
+    // Simplified and fast board evaluation
+    private int FastEvaluateBoard(HashSet<Vector3Int> redTiles, HashSet<Vector3Int> blueTiles)
     {
-        System.Text.StringBuilder sb = new System.Text.StringBuilder();
+        // Quickly check connection potentials
+        int redConnectScore = EvaluateConnectivity(redTiles, true);
+        int blueConnectScore = EvaluateConnectivity(blueTiles, false);
         
-        // Add a tag for whose turn it is
-        sb.Append(redTurn ? "R:" : "B:");
-        
-        // Add all red tiles (sorted to ensure consistency)
-        List<Vector3Int> sortedRedTiles = new List<Vector3Int>(redTiles);
-        sortedRedTiles.Sort((a, b) => {
-            if (a.x != b.x) return a.x.CompareTo(b.x);
-            if (a.y != b.y) return a.y.CompareTo(b.y);
-            return a.z.CompareTo(b.z);
-        });
-        
-        foreach (var tile in sortedRedTiles)
-        {
-            sb.Append($"{tile.x},{tile.y},{tile.z};");
-        }
-        
-        sb.Append("|");
-        
-        // Add all blue tiles (sorted to ensure consistency)
-        List<Vector3Int> sortedBlueTiles = new List<Vector3Int>(blueTiles);
-        sortedBlueTiles.Sort((a, b) => {
-            if (a.x != b.x) return a.x.CompareTo(b.x);
-            if (a.y != b.y) return a.y.CompareTo(b.y);
-            return a.z.CompareTo(b.z);
-        });
-        
-        foreach (var tile in sortedBlueTiles)
-        {
-            sb.Append($"{tile.x},{tile.y},{tile.z};");
-        }
-        
-        return sb.ToString();
+        return redConnectScore - blueConnectScore;
     }
     
-    private int EvaluateBoard(HashSet<Vector3Int> availableMoves, HashSet<Vector3Int> redTiles, HashSet<Vector3Int> blueTiles)
+    // Evaluate connectivity potential
+    private int EvaluateConnectivity(HashSet<Vector3Int> playerTiles, bool isRed)
     {
-        int redAdjFactor = EvaluateAdjFactor(redTiles, true);
-        int blueAdjFactor = EvaluateAdjFactor(blueTiles, false);
-
-        int redPositionFactor = EvaluatePositionFactor(redTiles, true);
-        int bluePositionFactor = EvaluatePositionFactor(blueTiles, false);
-        
-        // int redPathFactor = EvaluatePathFactor(redTiles, true);
-        // int bluePathFactor = EvaluatePathFactor(blueTiles, false);
-
-        return (redAdjFactor + redPositionFactor) - (blueAdjFactor + bluePositionFactor);
-    }
-    
-    private int EvaluateAdjFactor(HashSet<Vector3Int> playerTiles, bool redTurn)
-    {
-        int count = 0;
+        // Convert to offset coordinates
         HashSet<Vector2Int> offsetTiles = new HashSet<Vector2Int>();
-        foreach(Vector3Int tile in playerTiles)
+        foreach (var tile in playerTiles)
         {
-            offsetTiles.Add(TileOffset(tile));
-        }
-
-        foreach(var tile in offsetTiles)
-        {
-            foreach(Vector2Int neighbour in GetNeighbors(tile))
-            {
-                if(offsetTiles.Contains(neighbour) && neighbour.x >= 0 && neighbour.x <= 10 && neighbour.y >= 0 && neighbour.y <= 10)
-                {
-                    count++;
-                }
-            }
+            offsetTiles.Add(GetCachedOffset(tile));
         }
         
-        return count * 5;
-    }
-    
-    private int EvaluatePositionFactor(HashSet<Vector3Int> playerTiles, bool redTurn)
-    {
-        int reward = 0;
-        HashSet<Vector2Int> offsetTiles = new HashSet<Vector2Int>();
-        Vector2Int boardCenter = new Vector2Int(5,5);
-        foreach(Vector3Int tile in playerTiles)
-        {
-            offsetTiles.Add(TileOffset(tile));
-        }
-        foreach(var tile in offsetTiles)
-        {
-            int distance = Mathf.Abs(tile.x - boardCenter.x) + Mathf.Abs(tile.y - boardCenter.y);
-
-            int val = 11 - distance;
-
-            reward += 2 * val;
-            if(tile.x == boardCenter.x || tile.y == boardCenter.y)
-            {
-                reward += 5;
-            }
-        }
-        return reward;
-    }
-    
-    // Improved path evaluation that actually returns a score
-    private int EvaluatePathFactor(HashSet<Vector3Int> playerTiles, bool redTurn)
-    {
-        var offsetTiles = new HashSet<Vector2Int>();
-        var startEdge = new HashSet<Vector2Int>();
-        var endEdge = new HashSet<Vector2Int>();
+        int score = 0;
         
-        foreach (var cell in playerTiles)
+        // Count tiles on opposing edges (more is better)
+        int startEdgeCount = 0;
+        int endEdgeCount = 0;
+        
+        foreach (var tile in offsetTiles)
         {
-            Vector2Int preOffsetTiles = TileOffset(cell);
-            offsetTiles.Add(preOffsetTiles);
-            
-            if (redTurn)
+            if (isRed)
             {
-                if (preOffsetTiles.y == 0) startEdge.Add(preOffsetTiles);  //top
-                if (preOffsetTiles.y == 10) endEdge.Add(preOffsetTiles);   //bottom
+                if (tile.y == 0) startEdgeCount++;  // Top edge for red
+                if (tile.y == 10) endEdgeCount++;   // Bottom edge for red
             }
             else
             {
-                if (preOffsetTiles.x == 0) startEdge.Add(preOffsetTiles);  //left
-                if (preOffsetTiles.x == 10) endEdge.Add(preOffsetTiles);   //right
+                if (tile.x == 0) startEdgeCount++;  // Left edge for blue
+                if (tile.x == 10) endEdgeCount++;   // Right edge for blue
             }
         }
         
-        if (startEdge.Count == 0 || endEdge.Count == 0) return 0;
+        // Base score from edge presence
+        score += (startEdgeCount + endEdgeCount) * 20;
         
-        // Calculate shortest distance between any start and end edge tiles
-        int shortestPath = int.MaxValue;
-        foreach (var start in startEdge)
-        {
-            int distance = FindShortestPath(start, endEdge, offsetTiles);
-            if (distance < shortestPath && distance > 0)
-            {
-                shortestPath = distance;
-            }
-        }
-        
-        // If no path found, return 0
-        if (shortestPath == int.MaxValue) return 0;
-        
-        // A shorter path is better
-        return 100 - (shortestPath * 5);
-    }
-    
-    // Find the shortest path length between start and any end edge
-    private int FindShortestPath(Vector2Int start, HashSet<Vector2Int> endEdge, HashSet<Vector2Int> offsetTiles)
-    {
-        Queue<(Vector2Int, int)> queue = new Queue<(Vector2Int, int)>();
+        // Count connected groups (fewer is better - more consolidated)
         HashSet<Vector2Int> visited = new HashSet<Vector2Int>();
+        int connectedGroups = 0;
         
-        queue.Enqueue((start, 0));
-        visited.Add(start);
-        
-        while (queue.Count > 0)
+        foreach (var tile in offsetTiles)
         {
-            (Vector2Int current, int distance) = queue.Dequeue();
-            
-            if (endEdge.Contains(current)) return distance;
-            
-            foreach (var neighbor in GetNeighbors(current))
+            if (!visited.Contains(tile))
             {
-                if (offsetTiles.Contains(neighbor) &&
-                    !visited.Contains(neighbor) &&
-                    neighbor.x >= 0 && neighbor.x <= 10 &&
-                    neighbor.y >= 0 && neighbor.y <= 10)
+                connectedGroups++;
+                CountConnectedTiles(tile, offsetTiles, visited);
+            }
+        }
+        
+        // Penalize multiple disconnected groups
+        score -= connectedGroups * 15;
+        
+        // Bonus for tiles
+        score += offsetTiles.Count * 10;
+        
+        // Add connectivity density - more connections is better
+        int connectionCount = 0;
+        foreach (var tile in offsetTiles)
+        {
+            foreach (var neighbor in GetNeighborsForTile(tile))
+            {
+                if (offsetTiles.Contains(neighbor))
                 {
-                    visited.Add(neighbor);
-                    queue.Enqueue((neighbor, distance + 1));
+                    connectionCount++;
                 }
             }
         }
         
-        return int.MaxValue; // No path found
+        score += connectionCount * 5;
+        
+        return score;
+    }
+    
+    // Count connected tiles in a group using DFS
+    private void CountConnectedTiles(Vector2Int start, HashSet<Vector2Int> tiles, HashSet<Vector2Int> visited)
+    {
+        visited.Add(start);
+        
+        foreach (var neighbor in GetNeighborsForTile(start))
+        {
+            if (tiles.Contains(neighbor) && !visited.Contains(neighbor))
+            {
+                CountConnectedTiles(neighbor, tiles, visited);
+            }
+        }
+    }
+    
+    // Get neighbors with bounds checking
+    private IEnumerable<Vector2Int> GetNeighborsForTile(Vector2Int coordinates)
+    {
+        foreach (var dir in precalculatedNeighbors)
+        {
+            Vector2Int neighbor = coordinates + dir;
+            if (neighbor.x >= 0 && neighbor.x <= 10 && neighbor.y >= 0 && neighbor.y <= 10)
+            {
+                yield return neighbor;
+            }
+        }
     }
     
     private Vector2Int TileOffset(Vector3Int cell)
@@ -390,13 +483,16 @@ public class ABPruning
     
     private bool CheckForWin(HashSet<Vector3Int> playerTiles, bool isRed)
     {
+        // Fast exit if not enough tiles
+        if (playerTiles.Count < 11) return false;
+        
         var offsetTiles = new HashSet<Vector2Int>();
         var startEdge = new HashSet<Vector2Int>();
         var endEdge = new HashSet<Vector2Int>();
         
         foreach (var cell in playerTiles)
         {
-            Vector2Int preOffsetTiles = TileOffset(cell);
+            Vector2Int preOffsetTiles = GetCachedOffset(cell);
             offsetTiles.Add(preOffsetTiles);
             
             if (isRed)
@@ -411,8 +507,10 @@ public class ABPruning
             }
         }
         
+        // Quick exit if no tiles on either edge
         if (startEdge.Count == 0 || endEdge.Count == 0) return false;
         
+        // Use BFS to check for connection
         foreach (var start in startEdge)
         {
             if (BreadthFirstSearch(start, endEdge, offsetTiles))
@@ -434,8 +532,9 @@ public class ABPruning
             Vector2Int current = queue.Dequeue();
             if (endEdge.Contains(current)) return true;
             
-            foreach (var neighbor in GetNeighbors(current))
+            foreach (var dir in precalculatedNeighbors)
             {
+                Vector2Int neighbor = current + dir;
                 if (offsetTiles.Contains(neighbor) &&
                     !visited.Contains(neighbor) &&
                     neighbor.x >= 0 && neighbor.x <= 10 &&
@@ -453,12 +552,12 @@ public class ABPruning
     {
         return new List<Vector2Int>
         {
-            coordinates + new Vector2Int(1, 0),
-            coordinates + new Vector2Int(-1, 0),
-            coordinates + new Vector2Int(0, 1),
-            coordinates + new Vector2Int(0, -1),
-            coordinates + new Vector2Int(1, -1),
-            coordinates + new Vector2Int(-1, 1),
+            coordinates + precalculatedNeighbors[0],
+            coordinates + precalculatedNeighbors[1],
+            coordinates + precalculatedNeighbors[2],
+            coordinates + precalculatedNeighbors[3],
+            coordinates + precalculatedNeighbors[4],
+            coordinates + precalculatedNeighbors[5]
         };
     }
 }

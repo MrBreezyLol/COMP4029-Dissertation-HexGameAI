@@ -13,6 +13,8 @@ public class GameTiles : MonoBehaviour
     [SerializeField] private string gameMode = "";
     private bool isGameEnded = false;
     private bool AITurn = false;
+    private int redWins = 0;
+    private int blueWins = 0;
     private Color red = new Color(0.86f, 0.28f, 0.23f, 1.0f);
     private Color blue = new Color(0.08f, 0.46f, 0.90f, 1.0f);
     private string currentTurn = "red";
@@ -41,10 +43,15 @@ public class GameTiles : MonoBehaviour
         mtcs = new MTCS();
         alphaBeta = new ABPruning();
         alphaBeta2 = new ABPruning2();
+        if(gameMode == "SimulateAIGame")
+        {
+            _currentTile.SetActive(false);
+            StartCoroutine(SimulateAIGame());
+        }
     }
     void Update()
     {
-        if(isGameEnded == true)
+        if(isGameEnded == true || gameMode == "SimulateAIGame")
         {
             return;
         }
@@ -82,7 +89,7 @@ public class GameTiles : MonoBehaviour
             {
                 LocalGameTurnLogic(cellPosition);
             }
-            else
+            else if(gameMode == "PlayAI")
             {
                 AIGameTurnLogic(cellPosition);
             }
@@ -119,8 +126,8 @@ public class GameTiles : MonoBehaviour
         {
             
 
-            //Vector3Int aiMove = mtcs.MTCSFetchBestMove(new HashSet<Vector3Int>(gameTileList), clickedRedTiles, clickedBlueTiles, false);
-            Vector3Int aiMove = alphaBeta2.FetchBestMove(new HashSet<Vector3Int>(gameTileList), clickedRedTiles, clickedBlueTiles, false);
+            Vector3Int aiMove = mtcs.MTCSFetchBestMove(new HashSet<Vector3Int>(gameTileList), clickedRedTiles, clickedBlueTiles, false);
+            //Vector3Int aiMove = alphaBeta2.FetchBestMove(new HashSet<Vector3Int>(gameTileList), clickedRedTiles, clickedBlueTiles, false);
             
             Debug.Log("AI Played the move" + TileOffset(aiMove));
             PaintTile(aiMove, blue);
@@ -167,6 +174,45 @@ public class GameTiles : MonoBehaviour
                     }
                 }
             }
+    }
+    private IEnumerator SimulateAIGame()
+    {
+        while(!isGameEnded)
+        {
+            if(currentTurn == "red")
+            {
+                Vector3Int aiMove = mtcs.MTCSFetchBestMove(new HashSet<Vector3Int>(gameTileList), clickedRedTiles, clickedBlueTiles, true);
+                Debug.Log("Red played the move " + TileOffset(aiMove));
+                PaintTile(aiMove, red);
+                clickedRedTiles.Add(aiMove);
+                gameTileList.Remove(aiMove);
+                currentTurn = "blue";
+                if(CheckForWin(clickedRedTiles, true))
+                {
+                    Debug.Log("Red Wins!");
+                    EndGame("red");
+                    break;
+                }
+
+            }
+            else
+            {
+                Vector3Int aiMove = mtcs.MTCSFetchBestMove(new HashSet<Vector3Int>(gameTileList), clickedRedTiles, clickedBlueTiles, false);
+                Debug.Log("Blue played the move " + TileOffset(aiMove));
+                PaintTile(aiMove, blue);
+                clickedBlueTiles.Add(aiMove);
+                gameTileList.Remove(aiMove);
+                currentTurn = "red";
+                if(CheckForWin(clickedBlueTiles, false))
+                {
+                    Debug.Log("Blue Wins!");
+                    EndGame("blue");
+                    break;
+                }
+            }
+            yield return null;
+        }
+       
     }
     private void PaintTile(Vector3Int cellPosition, Color color)
     {
@@ -262,6 +308,15 @@ public class GameTiles : MonoBehaviour
         isGameEnded = true;
         TurnText.text = $"{winner} Wins!";
         _currentTile.SetActive(false);
+        if (gameMode == "SimulateAI")
+        {
+            if (winner == "red")
+                redWins++;
+            else
+                blueWins++;
+            
+            Debug.Log($"Red Wins: {redWins}, Blue Wins: {blueWins}");
+        }
     }
     private Vector3Int RandomAIMove(List<Vector3Int> gameTileList)
     {
