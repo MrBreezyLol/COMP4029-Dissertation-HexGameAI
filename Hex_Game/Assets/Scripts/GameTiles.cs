@@ -25,6 +25,8 @@ public class GameTiles : MonoBehaviour
     private Vector3Int _previousTile;
     private MTCS mtcs;
     private MTCSRave mtcsRave;
+    private MTCSBasic mtcsBasic;
+    private HeuristicAgent heuristicAgent;
     private ABPruning alphaBeta;
     private ABPruning2 alphaBeta2;
     void Start()
@@ -42,8 +44,11 @@ public class GameTiles : MonoBehaviour
         _currentTile = Instantiate(_highlight);
         _currentTile.SetActive(false);
         mtcs = new MTCS();
-        alphaBeta = new ABPruning();
         mtcsRave = new MTCSRave();
+        mtcsBasic = new MTCSBasic();
+        alphaBeta = new ABPruning();
+        heuristicAgent = new HeuristicAgent();
+
         if(gameMode == "SimulateAIGame")
         {
             _currentTile.SetActive(false);
@@ -197,7 +202,7 @@ public class GameTiles : MonoBehaviour
             }
             else
             {
-                Vector3Int aiMove = mtcs.MTCSFetchBestMove(new HashSet<Vector3Int>(gameTileList), clickedRedTiles, clickedBlueTiles, false);
+                Vector3Int aiMove = mtcsRave.MTCSFetchBestMove(new HashSet<Vector3Int>(gameTileList), clickedRedTiles, clickedBlueTiles, false);
                 Debug.Log("Blue played the move " + TileOffset(aiMove));
                 PaintTile(aiMove, blue);
                 clickedBlueTiles.Add(aiMove);

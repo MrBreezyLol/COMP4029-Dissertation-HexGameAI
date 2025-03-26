@@ -18,7 +18,7 @@ public class MTCS
             return Vector3Int.zero;
         }
         
-        Node root = new Node(null, Vector3Int.zero, availableMoves, redTiles, blueTiles, redTurn);
+        RaveNode root = new RaveNode(null, Vector3Int.zero, availableMoves, redTiles, blueTiles, redTurn);
         if(root.move == Vector3Int.zero && availableMoves.Count == 0)
         {
             
@@ -32,7 +32,7 @@ public class MTCS
         for(int i = 0; i < maxIterations; i++)
         {
             
-            Node selectedNode = SelectNode(root);
+            RaveNode selectedNode = SelectNode(root);
            
             if(!selectedNode.isExpanded() && !IsTerminalNode(selectedNode))
             {
@@ -41,9 +41,9 @@ public class MTCS
                 
             }
             
-            int outcome = RollOut(selectedNode);
+            var (outcome, raveMoves) = RollOut(selectedNode);
             
-            BackPropagate(selectedNode, outcome);
+            BackPropagate(selectedNode, outcome, raveMoves);
             
 
         }
@@ -98,7 +98,7 @@ public class MTCS
         return Vector3Int.zero;
         
     }
-    public Node SelectNode(Node node)
+    public RaveNode SelectNode(RaveNode node)
     {
         while (!IsTerminalNode(node) && node.isExpanded())
         {
@@ -109,9 +109,9 @@ public class MTCS
         
         return node;
     }
-    private Node BestChild(Node node)
+    private RaveNode BestChild(RaveNode node)
     {
-        Node bestNode = null;
+        RaveNode bestNode = null;
         float maxValue = float.MinValue;
         foreach (var child in node.children)
         {
@@ -125,15 +125,21 @@ public class MTCS
         return bestNode;
     }
 
-    public float UpperConfidenceBoundTree(Node node)
+    public float UpperConfidenceBoundTree(RaveNode node)
     {
         if(node.visits == 0)
         {
             return float.MaxValue;
         }
-        return (float)node.wins / node.visits + exploration * Mathf.Sqrt(Mathf.Log(node.parent.visits) / node.visits);
+        float uctValue = (float)node.wins / node.visits + exploration * Mathf.Sqrt(Mathf.Log(node.parent.visits) / node.visits);
+
+        float alpha = (float)Math.Sqrt(1000 / (3 * node.visits + 1000));
+        float raveScore = node.RaveScore(node.move);
+
+        return alpha * raveScore + (1 - alpha) * uctValue;
+        
     }
-    public Node Expansion(Node node)
+    public RaveNode Expansion(RaveNode node)
     {
         
         foreach(var move in node.availableMoves)
@@ -141,7 +147,7 @@ public class MTCS
             
             if(!node.lookupChildren.ContainsKey(move))
             {
-                Node newNode = new Node(node, move, node.availableMoves, node.redTiles, node.blueTiles, !node.redTurn);
+                RaveNode newNode = new RaveNode(node, move, node.availableMoves, node.redTiles, node.blueTiles, !node.redTurn);
                 node.children.Add(newNode);
                 node.lookupChildren[move] = newNode; 
                 return newNode;
@@ -149,8 +155,9 @@ public class MTCS
         }
         return node;
     }
-    public int RollOut(Node node)
+    public (int outcome, List<Vector3Int>) RollOut(RaveNode node)
     {
+        List<Vector3Int> trackRaveMoves = new List<Vector3Int>();
         HashSet<Vector3Int> tempRedTiles = new HashSet<Vector3Int>(node.redTiles);
         HashSet<Vector3Int> tempBlueTiles = new HashSet<Vector3Int>(node.blueTiles);
         HashSet<Vector3Int> tempMoves = new HashSet<Vector3Int>(node.availableMoves);
@@ -159,7 +166,7 @@ public class MTCS
         while (tempMoves.Count > 0)
         {
             Vector3Int selectMove = tempMoves.ElementAt(Random.Range(0, tempMoves.Count));
-            //Vector3Int selectMove = BestHeuristicMove(tempMoves, turn ? tempRedTiles : tempBlueTiles, turn);
+            trackRaveMoves.Add(selectMove);
 
             tempMoves.Remove(selectMove);
             if(turn)
@@ -167,7 +174,7 @@ public class MTCS
                 tempRedTiles.Add(selectMove);
                 if(CheckSimulationWin(tempRedTiles, true))
                 {
-                    return 1;
+                    return (1, trackRaveMoves);
                 }
             } 
             else
@@ -175,15 +182,15 @@ public class MTCS
                 tempBlueTiles.Add(selectMove);
                 if(CheckSimulationWin(tempBlueTiles, false))
                 {
-                    return -1;
+                    return (-1, trackRaveMoves);
                 }
             } 
             turn = !turn;
             
         }
-        return 0;
+        return (0, trackRaveMoves);
     }
-    public void BackPropagate(Node node, int outcome)
+    public void BackPropagate(RaveNode node, int outcome, List<Vector3Int> raveMoves)
     {
         while(node != null)
         {
@@ -196,16 +203,29 @@ public class MTCS
             {
                 node.wins--;
             }
+            foreach(var move in raveMoves)
+            {
+                if(!node.raveVisits.ContainsKey(move))
+                {
+                    node.raveVisits[move] = 0;
+                    node.raveWins[move] = 0;
+                }
+                node.raveVisits[move] += 1;
+                if((outcome == 1 && node.redTurn) || (outcome == -1 && !node.redTurn))
+                {
+                    node.raveWins[move] += 1;
+                }
+            }
             node = node.parent;
         }
     }
-    public Vector3Int BestMove(Node root)
+    public Vector3Int BestMove(RaveNode root)
     {
         if(root.children.Count == 0)
         {
             throw new InvalidOperationException("No available moves");
         }
-        Node bestNode = root.children[0];
+        RaveNode bestNode = root.children[0];
         for(int i = 0; i < root.children.Count; i++)
         {
             if(root.children[i].visits > bestNode.visits)
@@ -215,9 +235,13 @@ public class MTCS
         }
         return bestNode.move;
     }
-    private bool IsTerminalNode(Node node)
+    private bool IsTerminalNode(RaveNode node)
     {
         return node.availableMoves.Count == 0;
+    }
+    private Vector3Int HeuristicMove(HashSet<Vector3Int> availableMoves, HashSet<Vector3Int> currentTiles, bool redTurn)
+    {
+        return Vector3Int.zero;
     }
     private Vector3Int BestHeuristicMove(HashSet<Vector3Int> availableMoves, HashSet<Vector3Int> currentTiles, bool redTurn)
     {
@@ -340,6 +364,7 @@ public class MTCS
         }
         return minDistance;
     }
+    
 
     private bool CheckSimulationWin(HashSet<Vector3Int> playerTiles, bool redTurn)
     {
@@ -418,4 +443,5 @@ public class MTCS
     }
     
 }
+
 
