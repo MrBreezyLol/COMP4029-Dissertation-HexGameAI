@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Tilemaps;
 using TMPro;
+using System.IO;
 public class GameTiles : MonoBehaviour
 {
     
@@ -11,14 +12,17 @@ public class GameTiles : MonoBehaviour
     [SerializeField] private GameObject _highlight;
     [SerializeField] private TMP_Text TurnText;
     [SerializeField] private string gameMode = "";
-    private bool isGameEnded = false;
+    private bool GameRunning = true;
     private bool AITurn = false;
     private int redWins = 0;
     private int blueWins = 0;
     private Color red = new Color(0.86f, 0.28f, 0.23f, 1.0f);
     private Color blue = new Color(0.08f, 0.46f, 0.90f, 1.0f);
+    private Color grey = new Color(0.54f, 0.52f, 0.52f, 1.0f);
     private string currentTurn = "red";
+    private string fileName = "/Results.txt";
     private List<Vector3Int> gameTileList = new List<Vector3Int>();
+    private List<Vector3Int> copyTileList = new List<Vector3Int>();
     private HashSet<Vector3Int> clickedBlueTiles = new HashSet<Vector3Int>();
     private HashSet<Vector3Int> clickedRedTiles = new HashSet<Vector3Int>();
     private GameObject _currentTile;
@@ -39,6 +43,7 @@ public class GameTiles : MonoBehaviour
             if(gameTiles.HasTile(tile))
             {
                 gameTileList.Add(tile);
+                copyTileList.Add(tile);
             }
         }
         _currentTile = Instantiate(_highlight);
@@ -57,7 +62,7 @@ public class GameTiles : MonoBehaviour
     }
     void Update()
     {
-        if(isGameEnded == true || gameMode == "SimulateAIGame")
+        if(GameRunning == false || gameMode == "SimulateAIGame")
         {
             return;
         }
@@ -115,6 +120,7 @@ public class GameTiles : MonoBehaviour
             if(Input.GetMouseButtonDown(0) && !AITurn)
             {
                 Debug.Log("You played the move " + TileOffset(cellPosition));
+                Debug.Log(cellPosition);
                 PaintTile(cellPosition, red);
                 clickedRedTiles.Add(cellPosition);
                 gameTileList.Remove(cellPosition);
@@ -132,8 +138,7 @@ public class GameTiles : MonoBehaviour
         {
             
 
-            Vector3Int aiMove = mtcsRave.MTCSFetchBestMove(new HashSet<Vector3Int>(gameTileList), clickedRedTiles, clickedBlueTiles, false);
-            
+            Vector3Int aiMove = mtcs.MTCSFetchBestMove(new HashSet<Vector3Int>(gameTileList), clickedRedTiles, clickedBlueTiles, false);
             Debug.Log("AI Played the move" + TileOffset(aiMove));
             PaintTile(aiMove, blue);
             clickedBlueTiles.Add(aiMove);
@@ -182,42 +187,87 @@ public class GameTiles : MonoBehaviour
     }
     private IEnumerator SimulateAIGame()
     {
-        while(!isGameEnded)
+        int redWins = 0;
+        int blueWins = 0;
+        
+        
+        while(redWins < 5 && blueWins < 5)
         {
-            if(currentTurn == "red")
+            ResetGame();
+            
+            while(GameRunning)
             {
-                Vector3Int aiMove = mtcs.MTCSFetchBestMove(new HashSet<Vector3Int>(gameTileList), clickedRedTiles, clickedBlueTiles, true);
-                Debug.Log("Red played the move " + TileOffset(aiMove));
-                PaintTile(aiMove, red);
-                clickedRedTiles.Add(aiMove);
-                gameTileList.Remove(aiMove);
-                currentTurn = "blue";
-                if(CheckForWin(clickedRedTiles, true))
-                {
-                    Debug.Log("Red Wins!");
-                    EndGame("red");
-                    break;
-                }
 
-            }
-            else
-            {
-                Vector3Int aiMove = mtcsRave.MTCSFetchBestMove(new HashSet<Vector3Int>(gameTileList), clickedRedTiles, clickedBlueTiles, false);
-                Debug.Log("Blue played the move " + TileOffset(aiMove));
-                PaintTile(aiMove, blue);
-                clickedBlueTiles.Add(aiMove);
-                gameTileList.Remove(aiMove);
-                currentTurn = "red";
-                if(CheckForWin(clickedBlueTiles, false))
+                if(currentTurn == "red")
                 {
-                    Debug.Log("Blue Wins!");
-                    EndGame("blue");
-                    break;
+                    Vector3Int aiMove = mtcs.MTCSFetchBestMove(new HashSet<Vector3Int>(gameTileList), clickedRedTiles, clickedBlueTiles, true);
+                    Debug.Log("Red played the move " + TileOffset(aiMove));
+                    PaintTile(aiMove, red);
+                    clickedRedTiles.Add(aiMove);
+                    gameTileList.Remove(aiMove);
+                    currentTurn = "blue";
+                    if(CheckForWin(clickedRedTiles, true))
+                    {
+                        redWins++;
+                        Debug.Log("Red Wins!");
+                        EndGame("red");
+                        break;
+                    }
+
                 }
+                else
+                {
+                    Vector3Int aiMove = mtcsRave.MTCSFetchBestMove(new HashSet<Vector3Int>(gameTileList), clickedRedTiles, clickedBlueTiles, false);
+                    Debug.Log("Blue played the move " + TileOffset(aiMove));
+                    PaintTile(aiMove, blue);
+                    clickedBlueTiles.Add(aiMove);
+                    gameTileList.Remove(aiMove);
+                    currentTurn = "red";
+                    if(CheckForWin(clickedBlueTiles, false))
+                    {
+                        blueWins++;
+                        Debug.Log("Blue Wins!");
+                        EndGame("blue");
+                        break;
+                    }
+                }
+                yield return null;
             }
-            yield return null;
+            
+            WriteToFile("Red Wins:" + redWins.ToString());
+            WriteToFile("Blue Wins:" + blueWins.ToString());
+            yield return new WaitForSeconds(2f);
         }
+        
+        
+        
+
        
+    }
+    private void WriteToFile(string text)
+    {
+        
+        using (StreamWriter writer = new StreamWriter(Application.dataPath + fileName,true))
+        {
+            writer.WriteLine(text);
+        }
+        
+    }
+    private void ResetGame()
+    {
+        GameRunning = true;
+        currentTurn = "red";
+        gameTileList = new List<Vector3Int>(copyTileList);
+        clickedRedTiles.Clear();
+        clickedBlueTiles.Clear();
+        foreach(var tile in gameTileList)
+        {
+            gameTiles.SetTileFlags(tile, TileFlags.None);
+            gameTiles.SetColor(tile, grey);
+        }
+        TurnText.text = "Red's Turn";
+        
+
     }
     private void PaintTile(Vector3Int cellPosition, Color color)
     {
@@ -310,7 +360,7 @@ public class GameTiles : MonoBehaviour
     }
     private void EndGame(string winner)
     {
-        isGameEnded = true;
+        GameRunning = false;
         TurnText.text = $"{winner} Wins!";
         _currentTile.SetActive(false);
         if (gameMode == "SimulateAI")

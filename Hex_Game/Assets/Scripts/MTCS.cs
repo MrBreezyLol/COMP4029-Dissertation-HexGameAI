@@ -8,6 +8,7 @@ public class MTCS
 {
     private float exploration = 1.5f;
     private int maxIterations = 1000;
+    private Vector3Int firstCenterMove = new Vector3Int(1,0,0);
 
     public Vector3Int MTCSFetchBestMove(HashSet<Vector3Int> availableMoves, HashSet<Vector3Int> redTiles, HashSet<Vector3Int> blueTiles, bool redTurn)
     {
@@ -21,8 +22,15 @@ public class MTCS
         RaveNode root = new RaveNode(null, Vector3Int.zero, availableMoves, redTiles, blueTiles, redTurn);
         if(root.move == Vector3Int.zero && availableMoves.Count == 0)
         {
-            
             return Vector3Int.zero;
+        }
+        if(availableMoves.Count == 120)
+        {
+            if(!redTiles.Contains(firstCenterMove))
+            {
+                return firstCenterMove;
+            }
+            return new Vector3Int(0,1,0);
         }
         Vector3Int quickMove = QuickMove(availableMoves, redTiles, blueTiles, redTurn);
         if(quickMove != Vector3Int.zero)
@@ -133,10 +141,10 @@ public class MTCS
         }
         float uctValue = (float)node.wins / node.visits + exploration * Mathf.Sqrt(Mathf.Log(node.parent.visits) / node.visits);
 
-        float alpha = (float)Math.Sqrt(1000 / (3 * node.visits + 1000));
+        float beta = (float)Math.Sqrt(1000 / (3 * node.visits + 1000));
         float raveScore = node.RaveScore(node.move);
 
-        return alpha * raveScore + (1 - alpha) * uctValue;
+        return beta * raveScore + (1 - beta) * uctValue;
         
     }
     public RaveNode Expansion(RaveNode node)
@@ -239,11 +247,31 @@ public class MTCS
     {
         return node.availableMoves.Count == 0;
     }
-    private Vector3Int HeuristicMove(HashSet<Vector3Int> availableMoves, HashSet<Vector3Int> currentTiles, bool redTurn)
+    private int EvaluateAdjFactor(HashSet<Vector3Int> playerTiles, bool redTurn)
     {
-        return Vector3Int.zero;
+        int count = 0;
+        int reward = 0;
+        HashSet<Vector2Int> offsetTiles = new HashSet<Vector2Int>();
+        foreach(Vector3Int tile in playerTiles)
+        {
+            offsetTiles.Add(SimulationTileOffset(tile));
+        }
+
+        foreach(var tile in offsetTiles)
+        {
+            foreach(Vector2Int neighbour in GetSimulationNeighbors(tile))
+            {
+                if(offsetTiles.Contains(neighbour) && neighbour.x >= 0 && neighbour.x <= 10 && neighbour.y >= 0 && neighbour.y <= 10)
+                {
+                    count = count + 1;
+                }
+            }
+        }
+        
+        reward += count * 5;
+        return reward;
     }
-    private Vector3Int BestHeuristicMove(HashSet<Vector3Int> availableMoves, HashSet<Vector3Int> currentTiles, bool redTurn)
+    private Vector3Int BestHeuristicMove(HashSet<Vector3Int> availableMoves, HashSet<Vector3Int> currentTiles,  bool redTurn)
     {
         Vector3Int bestMove = Vector3Int.zero;
         int bestScore = int.MaxValue;
@@ -262,6 +290,7 @@ public class MTCS
         
         return bestMove;
     }
+    
     private int Djikstras(HashSet<Vector3Int> playerTiles, bool redTurn)
     {
         var offsetTiles = new HashSet<Vector2Int>();

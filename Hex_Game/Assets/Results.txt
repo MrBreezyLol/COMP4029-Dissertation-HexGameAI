@@ -1,0 +1,8 @@
+Red Wins:0
+Blue Wins:0
+Red Wins:0
+Blue Wins:0
+Red Wins:3
+Blue Wins:3
+Red Wins:0
+Blue Wins:1

@@ -133,10 +133,10 @@ public class MTCSRave
         }
         float uctValue = (float)node.wins / node.visits + exploration * Mathf.Sqrt(Mathf.Log(node.parent.visits) / node.visits);
 
-        float alpha = (float)Math.Sqrt(1000 / (3 * node.visits + 1000));
+        float beta = (float)Math.Sqrt(1000 / (3 * node.visits + 1000));
         float raveScore = node.RaveScore(node.move);
 
-        return alpha * raveScore + (1 - alpha) * uctValue;
+        return beta * raveScore + (1 - beta) * uctValue;
         
     }
     public RaveNode Expansion(RaveNode node)
