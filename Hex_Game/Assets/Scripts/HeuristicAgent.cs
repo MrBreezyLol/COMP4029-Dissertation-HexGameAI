@@ -7,9 +7,9 @@ using System.Linq;
 
 public class HeuristicAgent 
 {
-    private Vector3Int center = new Vector3Int(5,5,0);
+    private Vector3Int center = new Vector3Int(1,0,0);
     private bool first = true;
-    private Vector3Int FetchBestMove(HashSet<Vector3Int> availableMoves, HashSet<Vector3Int> clickedRedTiles, HashSet<Vector3Int> clickedBlueTiles, bool redTurn)
+    public Vector3Int FetchBestMove(HashSet<Vector3Int> availableMoves, HashSet<Vector3Int> clickedRedTiles, HashSet<Vector3Int> clickedBlueTiles, bool redTurn)
     {
         if(first && availableMoves.Contains(center))
         {

@@ -138,7 +138,7 @@ public class GameTiles : MonoBehaviour
         {
             
 
-            Vector3Int aiMove = mtcs.MTCSFetchBestMove(new HashSet<Vector3Int>(gameTileList), clickedRedTiles, clickedBlueTiles, false);
+            Vector3Int aiMove = heuristicAgent.FetchBestMove(new HashSet<Vector3Int>(gameTileList), clickedRedTiles, clickedBlueTiles, false);
             Debug.Log("AI Played the move" + TileOffset(aiMove));
             PaintTile(aiMove, blue);
             clickedBlueTiles.Add(aiMove);
