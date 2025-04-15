@@ -5,23 +5,25 @@ using UnityEngine.SceneManagement;
 public class MainScene : MonoBehaviour
 {
     public static string gameMode = "";
-    // Start is called before the first frame update
     void Start()
     {
         
     }
 
+    // function to change scenes to play local
     public void PlayLocalchangeScene()
     {
         gameMode = "PlayLocal";
         SceneManager.LoadScene("Game");
         
     }
+    // function to change scene to play AI
     public void PlayAIchangeScene()
     {
         gameMode = "PlayAI";
         SceneManager.LoadScene("Game");
     }
+    // function to change scene to simulate AI games
     public void SimulateAIGames()
     {
         gameMode = "SimulateAIGame";

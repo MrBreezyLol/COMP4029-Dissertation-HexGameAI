@@ -30,41 +30,43 @@ public class HeuristicAgent
         }
         return DjikstraNextMove(availableMoves, clickedRedTiles, clickedBlueTiles, redTurn);
     }
+    //function for djikstra shortest path, its similar to mtcs djikstra but returns the move instead of distance
     private Vector3Int DjikstraNextMove(HashSet<Vector3Int> availableMoves, HashSet<Vector3Int> clickedRedTiles, HashSet<Vector3Int> clickedBlueTiles, bool redTurn)
     {
-        Dictionary<Vector3Int, int> distance = new Dictionary<Vector3Int, int>();
-        Queue<Vector3Int> queue = new Queue<Vector3Int>();
+        Dictionary<Vector3Int, int> distance = new Dictionary<Vector3Int, int>();   //initialize new dictionary storing move and distance
+        Queue<Vector3Int> queue = new Queue<Vector3Int>();  //initialize a queue
         Vector3Int bestMove = Vector3Int.zero;
         int minDistance = int.MaxValue;
         
-        foreach(var move in redTurn ? clickedRedTiles : clickedBlueTiles)
+        foreach(var move in redTurn ? clickedRedTiles : clickedBlueTiles)   // loop through red tiles if its red turn, else blue
         {
-            distance[move] = 0;
+            distance[move] = 0; //initalize distance to 0
             queue.Enqueue(move);
         }
-        while(queue.Count > 0)
+        while(queue.Count > 0)  //loop until queue is empty
         {
             Vector3Int current = queue.Dequeue();
-            foreach(var neighbour in GetSimulationNeighbors3(current))
+            foreach(var neighbour in GetSimulationNeighbors3(current))  //loop through all neighbours of current tile
             {
-                if((!availableMoves.Contains(neighbour)) || distance.ContainsKey(neighbour))
+                if((!availableMoves.Contains(neighbour)) || distance.ContainsKey(neighbour))    //if neighbour has not been played yet, or is in distance, continue
                 {
                     continue;
                 }
-                distance[neighbour] = distance[current] + 1;
+                distance[neighbour] = distance[current] + 1;    //else set the distance to the current + 1
                 queue.Enqueue(neighbour);
             }
         }
-        foreach(var move in availableMoves)
+        foreach(var move in availableMoves) //loop through each move, if it is not in distance dict, continue
         {
             if(!distance.ContainsKey(move))
             {
                 continue;
             }
-            Vector2Int offset = SimulationTileOffset(move);
-            int distanceToEdge = redTurn ? Mathf.Min(offset.y, 10-offset.y) : Mathf.Min(offset.x, 10-offset.x);
-            int totalDistance = distanceToEdge + distance[move];
-            if(totalDistance < minDistance)
+            Vector2Int offset = SimulationTileOffset(move); //calculate offset of the move
+            //calculate distance to the edge, depending on if its red or blue
+            int distanceToEdge = redTurn ? Mathf.Min(offset.y, 10-offset.y) : Mathf.Min(offset.x, 10-offset.x); 
+            int totalDistance = distanceToEdge + distance[move];    //calculate total distance by adding distance to edge and the move distance
+            if(totalDistance < minDistance) //if the total distance is smaller than current minimum distance, set it
             {
                 minDistance = totalDistance;
                 bestMove = move;
@@ -74,6 +76,7 @@ public class HeuristicAgent
         
         
     }
+    //the following are all functions from gameTile class
     private bool CheckSimulationWin(HashSet<Vector3Int> playerTiles, bool redTurn)
     {
         var offsetTiles = new HashSet<Vector2Int>();

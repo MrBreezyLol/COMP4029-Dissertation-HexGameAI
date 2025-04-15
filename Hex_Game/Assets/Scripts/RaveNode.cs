@@ -4,12 +4,13 @@ using UnityEngine;
 
 public class RaveNode
 {
+    //rave node class for MTCS RAVE, same as normal node class but with some additions
     public RaveNode parent;
     public List<RaveNode> children = new List<RaveNode>();
     public Dictionary<Vector3Int, RaveNode> lookupChildren = new Dictionary<Vector3Int, RaveNode>();
     public Vector3Int move;
-    public Dictionary<Vector3Int, int> raveWins = new Dictionary<Vector3Int, int>();
-    public Dictionary<Vector3Int, int> raveVisits = new Dictionary<Vector3Int, int>();
+    public Dictionary<Vector3Int, int> raveWins = new Dictionary<Vector3Int, int>();    //dictionary of rave wins for specific moves 
+    public Dictionary<Vector3Int, int> raveVisits = new Dictionary<Vector3Int, int>();  //dictionary of rave visits for specific moves
 
     public int wins;
     public int visits;
@@ -48,16 +49,16 @@ public class RaveNode
         
         return lookupChildren.Count == availableMoves.Count;
     }
-    public float RaveScore(Vector3Int move)
+    public float RaveScore(Vector3Int move) //function to calculate rave score
     {
-        if(!raveVisits.ContainsKey(move) || raveVisits[move] == 0)
+        if(!raveVisits.ContainsKey(move) || raveVisits[move] == 0)  //if rave visits does not contain move or number of visits is 0, set it to 0
         {
 
             return 0;
         }
         else
         {
-            return (float)raveWins[move] / raveVisits[move];
+            return (float)raveWins[move] / raveVisits[move];    //else return wins / visits
         }
     }
 }

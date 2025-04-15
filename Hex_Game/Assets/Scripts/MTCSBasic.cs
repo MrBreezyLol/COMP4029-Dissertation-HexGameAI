@@ -6,6 +6,7 @@ using Random=UnityEngine.Random;
 using System.Linq;
 public class MTCSBasic
 {
+    //this class is the same as MTCS but with no added heuristics and no RAVE node
     private float exploration = 1.5f;
     private int maxIterations = 1000;
 

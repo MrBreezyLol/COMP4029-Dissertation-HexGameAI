@@ -6,6 +6,7 @@ using Random=UnityEngine.Random;
 using System.Linq;
 public class MTCSRave
 {
+    //same class as MTCS but without the heuristics
     private float exploration = 1.5f;
     private int maxIterations = 1000;
 
